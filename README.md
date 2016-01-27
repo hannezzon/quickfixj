@@ -1,8 +1,11 @@
-QuickFIX/J
-==========
+QuickFIX/J updated by hannezzon
+===============================
 
-This is the official QuickFIX/J project repository.
+This is a fork of the official QuickFIX/J project repository https://github.com/quickfix-j/quickfixj.git.
 
+The purpose is to upgrade an already great library to Java 1.8, Log4j2 and maybe polishing the poms. 
+
+Description from QuickFIX/J official repository:
 The Financial Information eXchange (FIX) protocol is a messaging standard developed
 specifically for the real-time electronic exchange of securities transactions.
 FIX is a public-domain specification owned and maintained by FIX Protocol, Ltd (FPL).
