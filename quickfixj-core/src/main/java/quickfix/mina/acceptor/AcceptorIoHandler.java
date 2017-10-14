@@ -42,7 +42,6 @@ import quickfix.mina.SessionConnector;
 
 class AcceptorIoHandler extends AbstractIoHandler {
     private final EventHandlingStrategy eventHandlingStrategy;
-
     private final AcceptorSessionProvider sessionProvider;
 
     public AcceptorIoHandler(AcceptorSessionProvider sessionProvider,
@@ -55,7 +54,7 @@ class AcceptorIoHandler extends AbstractIoHandler {
     @Override
     public void sessionCreated(IoSession session) throws Exception {
         super.sessionCreated(session);
-        log.info("MINA session created: " + "local=" + session.getLocalAddress() + ", "
+        log.info("MINA session created: local=" + session.getLocalAddress() + ", "
                 + session.getClass() + ", remote=" + session.getRemoteAddress());
     }
 
@@ -72,12 +71,12 @@ class AcceptorIoHandler extends AbstractIoHandler {
                         // Session is already bound to another connection
                         sessionLog
                                 .onErrorEvent("Multiple logons/connections for this session are not allowed");
-                        protocolSession.close(true);
+                        protocolSession.closeNow();
                         return;
                     }
                     sessionLog.onEvent("Accepting session " + qfSession.getSessionID() + " from "
                             + protocolSession.getRemoteAddress());
-                    final int heartbeatInterval = message.getInt(HeartBtInt.FIELD);
+                    final int heartbeatInterval = message.isSetField(HeartBtInt.FIELD) ? message.getInt(HeartBtInt.FIELD) : 0;
                     qfSession.setHeartBeatInterval(heartbeatInterval);
                     sessionLog.onEvent("Acceptor heartbeat set to " + heartbeatInterval
                             + " seconds");
@@ -91,7 +90,7 @@ class AcceptorIoHandler extends AbstractIoHandler {
                             final ApplVerID applVerID = new ApplVerID(
                                     message.getString(DefaultApplVerID.FIELD));
                             qfSession.setTargetDefaultApplicationVersionID(applVerID);
-                            log.info("Setting DefaultApplVerID (" + DefaultApplVerID.FIELD + "="
+                            sessionLog.onEvent("Setting DefaultApplVerID (" + DefaultApplVerID.FIELD + "="
                                     + applVerID.getValue() + ") from Logon");
                         }
                     }
@@ -105,7 +104,7 @@ class AcceptorIoHandler extends AbstractIoHandler {
                 }
             } else {
                 log.warn("Ignoring non-logon message before session establishment: " + message);
-                protocolSession.close(true);
+                protocolSession.closeNow();
                 return;
             }
         }

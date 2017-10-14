@@ -19,6 +19,10 @@
 
 package quickfix;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import quickfix.field.converter.BooleanConverter;
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,11 +45,6 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import quickfix.field.converter.BooleanConverter;
 
 /**
  * Settings for sessions. Settings are grouped by FIX version and target company
@@ -233,13 +232,37 @@ public class SessionSettings {
         }
     }
 
-    private Properties getOrCreateSessionProperties(SessionID sessionID) {
-        Properties p = sections.get(sessionID);
-        if (p == null) {
-            p = new Properties(sections.get(DEFAULT_SESSION_ID));
-            sections.put(sessionID, p);
+    /**
+     * Gets an int from the default section of settings.
+     *
+     * @param key
+     * @return the default value
+     * @throws ConfigError
+     * @throws FieldConvertError
+     */
+    public int getInt(String key) throws ConfigError, FieldConvertError {
+        return getInt(DEFAULT_SESSION_ID, key);
+    }
+
+    /**
+     * Get a settings value as an integer.
+     *
+     * @param sessionID the session ID
+     * @param key       the settings key
+     * @return the long integer value for the setting
+     * @throws ConfigError       configurion error, probably a missing setting.
+     * @throws FieldConvertError error during field type conversion.
+     */
+    public int getInt(SessionID sessionID, String key) throws ConfigError, FieldConvertError {
+        try {
+            return Integer.parseInt(getString(sessionID, key));
+        } catch (final NumberFormatException e) {
+            throw new FieldConvertError(e.getMessage());
         }
-        return p;
+    }
+
+    private Properties getOrCreateSessionProperties(SessionID sessionID) {
+        return sections.computeIfAbsent(sessionID, k -> new Properties(sections.get(DEFAULT_SESSION_ID)));
     }
 
     /**
@@ -344,10 +367,10 @@ public class SessionSettings {
         getOrCreateSessionProperties(sessionID).setProperty(key, BooleanConverter.convert(value));
     }
 
-    private final HashMap<SessionID, Properties> sections = new HashMap<SessionID, Properties>();
+    private final HashMap<SessionID, Properties> sections = new HashMap<>();
 
     public Iterator<SessionID> sectionIterator() {
-        final HashSet<SessionID> nondefaultSessions = new HashSet<SessionID>(sections.keySet());
+        final HashSet<SessionID> nondefaultSessions = new HashSet<>(sections.keySet());
         nondefaultSessions.remove(DEFAULT_SESSION_ID);
         return nondefaultSessions.iterator();
     }
@@ -700,7 +723,7 @@ public class SessionSettings {
         }
         final String multiplierCharacter = raw.contains("*") ? "\\*" : "x";
         final String[] data = raw.split(";");
-        final List<Integer> result = new ArrayList<Integer>();
+        final List<Integer> result = new ArrayList<>();
         for (final String multi : data) {
             final String[] timesSec = multi.split(multiplierCharacter);
             int times;
@@ -738,7 +761,7 @@ public class SessionSettings {
             return null;
         }
         final String[] data = raw.split(",");
-        final Set<InetAddress> result = new HashSet<InetAddress>();
+        final Set<InetAddress> result = new HashSet<>();
         for (final String multi : data) {
             try {
                 result.add(InetAddress.getByName(multi));

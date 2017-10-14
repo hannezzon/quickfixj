@@ -19,17 +19,17 @@
 
 package quickfix;
 
-import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.*;
+import org.junit.Before;
+import org.junit.Test;
+import quickfix.field.ApplVerID;
+import quickfix.test.acceptance.ATApplication;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.junit.Before;
-import org.junit.Test;
-
-import quickfix.field.ApplVerID;
-import quickfix.test.acceptance.ATApplication;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.Assert.*;
 
 public class DefaultSessionFactoryTest {
 
@@ -42,7 +42,7 @@ public class DefaultSessionFactoryTest {
         sessionID = new SessionID(FixVersions.BEGINSTRING_FIX42, "SENDER", "TARGET");
         setUpDefaultSettings(sessionID);
         factory = new DefaultSessionFactory(new ATApplication(), new MemoryStoreFactory(),
-                new ScreenLogFactory(true, true, true));
+                new SLF4JLogFactory(new SessionSettings()));
     }
 
     @Test
@@ -55,7 +55,7 @@ public class DefaultSessionFactoryTest {
         sessionID = new SessionID(FixVersions.BEGINSTRING_FIXT11, "SENDER", "TARGET");
         setUpDefaultSettings(sessionID);
         factory = new DefaultSessionFactory(new ATApplication(), new MemoryStoreFactory(),
-                new ScreenLogFactory(true, true, true));
+                new SLF4JLogFactory(new SessionSettings()));
         Exception e = null;
         try {
             factory.create(sessionID, settings);
@@ -130,11 +130,11 @@ public class DefaultSessionFactoryTest {
         createSessionAndAssertDictionaryNotFound();
     }
 
-    private void createSessionAndAssertDictionaryNotFound() throws ConfigError {
+    private void createSessionAndAssertDictionaryNotFound() {
         try {
             factory.create(sessionID, settings);
             fail("no data dictionary exception");
-        } catch (DataDictionary.Exception e) {
+        } catch (ConfigError e) {
             assertTrue("exception message not matched, expected: " + "... Could not find data ..."
                     + ", got: " + e.getMessage(),
                     e.getMessage().contains("Could not find data"));
@@ -215,6 +215,23 @@ public class DefaultSessionFactoryTest {
     public void testReconnectIntervalInDefaultSession() throws Exception {
         settings.setString(sessionID, "ReconnectInterval", "2x5;3x15");
         factory.create(sessionID, settings);
+    }
+    
+    @Test
+    // QFJ-873
+    public void testTimestampPrecision() throws Exception {
+        settings.setString(Session.SETTING_TIMESTAMP_PRECISION, "FOO");
+        createSessionAndAssertConfigError("no exception", ".*No enum constant quickfix.UtcTimestampPrecision.FOO.*");
+        settings.setString(Session.SETTING_TIMESTAMP_PRECISION, "SECONDS");
+        factory.create(sessionID, settings);
+        settings.setString(Session.SETTING_TIMESTAMP_PRECISION, "MILLIS");
+        factory.create(sessionID, settings);
+        settings.setString(Session.SETTING_TIMESTAMP_PRECISION, "NANOS");
+        factory.create(sessionID, settings);
+        settings.setString(Session.SETTING_TIMESTAMP_PRECISION, "MICROS");
+        factory.create(sessionID, settings);
+        settings.setString(Session.SETTING_TIMESTAMP_PRECISION, "PICOS");
+        createSessionAndAssertConfigError("no exception", ".*No enum constant quickfix.UtcTimestampPrecision.PICOS.*");
     }
 
 }

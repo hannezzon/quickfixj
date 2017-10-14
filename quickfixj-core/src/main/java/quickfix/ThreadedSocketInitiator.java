@@ -72,6 +72,7 @@ public class ThreadedSocketInitiator extends AbstractSocketInitiator {
     }
 
     public void start() throws ConfigError, RuntimeError {
+    	eventHandlingStrategy.setExecutor(longLivedExecutor);
         createSessionInitiators();
         startInitiators();
     }
@@ -82,10 +83,7 @@ public class ThreadedSocketInitiator extends AbstractSocketInitiator {
 
     public void stop(boolean forceDisconnect) {
         logoutAllSessions(forceDisconnect);
-        stopSessionTimer();
-        if (!forceDisconnect) {
-            waitForLogout();
-        }
+        stopInitiators();
         eventHandlingStrategy.stopDispatcherThreads();
         Session.unregisterSessions(getSessions());
     }

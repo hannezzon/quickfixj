@@ -19,25 +19,13 @@
 
 package quickfix.mina.initiator;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.security.GeneralSecurityException;
-import java.util.Arrays;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-
-import javax.net.ssl.SSLContext;
-
 import org.apache.mina.core.filterchain.IoFilterChainBuilder;
 import org.apache.mina.core.future.ConnectFuture;
 import org.apache.mina.core.service.IoConnector;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import org.apache.mina.proxy.ProxyConnector;
+import org.apache.mina.transport.socket.SocketConnector;
 import quickfix.ConfigError;
 import quickfix.LogUtil;
 import quickfix.Session;
@@ -52,41 +40,59 @@ import quickfix.mina.ssl.SSLContextFactory;
 import quickfix.mina.ssl.SSLFilter;
 import quickfix.mina.ssl.SSLSupport;
 
+import javax.net.ssl.SSLContext;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.security.GeneralSecurityException;
+import java.util.Arrays;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import quickfix.mina.SessionConnector;
+
 public class IoSessionInitiator {
     private final static long CONNECT_POLL_TIMEOUT = 2000L;
     private final ScheduledExecutorService executor;
     private final ConnectTask reconnectTask;
 
     private Future<?> reconnectFuture;
-    protected final static Logger log = LoggerFactory.getLogger("display." + IoSessionInitiator.class.getName());
 
-    public IoSessionInitiator(Session fixSession, SocketAddress[] socketAddresses, SocketAddress localAddress,
-            int[] reconnectIntervalInSeconds, ScheduledExecutorService executor,
-            NetworkingOptions networkingOptions, EventHandlingStrategy eventHandlingStrategy,
-            IoFilterChainBuilder userIoFilterChainBuilder, boolean sslEnabled, SSLConfig sslConfig) throws ConfigError {
+    public IoSessionInitiator(Session fixSession, SocketAddress[] socketAddresses,
+            SocketAddress localAddress, int[] reconnectIntervalInSeconds,
+            ScheduledExecutorService executor, NetworkingOptions networkingOptions,
+            EventHandlingStrategy eventHandlingStrategy,
+            IoFilterChainBuilder userIoFilterChainBuilder, boolean sslEnabled, SSLConfig sslConfig,
+            String proxyType, String proxyVersion, String proxyHost, int proxyPort,
+            String proxyUser, String proxyPassword, String proxyDomain, String proxyWorkstation) throws ConfigError {
         this.executor = executor;
         final long[] reconnectIntervalInMillis = new long[reconnectIntervalInSeconds.length];
         for (int ii = 0; ii != reconnectIntervalInSeconds.length; ++ii) {
             reconnectIntervalInMillis[ii] = reconnectIntervalInSeconds[ii] * 1000L;
         }
         try {
-            reconnectTask = new ConnectTask(sslEnabled, socketAddresses, localAddress, userIoFilterChainBuilder,
-                    fixSession, reconnectIntervalInMillis, networkingOptions,
-                    eventHandlingStrategy, sslConfig);
+            reconnectTask = new ConnectTask(sslEnabled, socketAddresses, localAddress,
+                    userIoFilterChainBuilder, fixSession, reconnectIntervalInMillis,
+                    networkingOptions, eventHandlingStrategy, sslConfig,
+                    proxyType, proxyVersion, proxyHost, proxyPort, proxyUser, proxyPassword, proxyDomain, proxyWorkstation);
         } catch (GeneralSecurityException e) {
             throw new ConfigError(e);
         }
-        log.info("[" + fixSession.getSessionID() + "] " + Arrays.asList(socketAddresses));
+
+        fixSession.getLog().onEvent("Configured socket addresses for session: " + Arrays.asList(socketAddresses));
     }
 
     private static class ConnectTask implements Runnable {
+        private final boolean sslEnabled;
         private final SocketAddress[] socketAddresses;
         private final SocketAddress localAddress;
-        private final IoConnector ioConnector;
+        private final IoFilterChainBuilder userIoFilterChainBuilder;
+        private IoConnector ioConnector;
         private final Session fixSession;
         private final long[] reconnectIntervalInMillis;
+        private final NetworkingOptions networkingOptions;
+        private final EventHandlingStrategy eventHandlingStrategy;
         private final SSLConfig sslConfig;
-        private final InitiatorIoHandler ioHandler;
 
         private IoSession ioSession;
         private long lastReconnectAttemptTime;
@@ -95,58 +101,115 @@ public class IoSessionInitiator {
         private int connectionFailureCount;
         private ConnectFuture connectFuture;
 
+        private final String proxyType;
+        private final String proxyVersion;
+        private final String proxyHost;
+        private final int proxyPort;
+        private final String proxyUser;
+        private final String proxyPassword;
+        private final String proxyDomain;
+        private final String proxyWorkstation;
+
         public ConnectTask(boolean sslEnabled, SocketAddress[] socketAddresses,
-                SocketAddress localAddress, IoFilterChainBuilder userIoFilterChainBuilder, Session fixSession,
-                long[] reconnectIntervalInMillis, NetworkingOptions networkingOptions,
-                EventHandlingStrategy eventHandlingStrategy, SSLConfig sslConfig) throws ConfigError, GeneralSecurityException {
+                SocketAddress localAddress, IoFilterChainBuilder userIoFilterChainBuilder,
+                Session fixSession, long[] reconnectIntervalInMillis,
+                NetworkingOptions networkingOptions, EventHandlingStrategy eventHandlingStrategy, SSLConfig sslConfig,
+                String proxyType, String proxyVersion, String proxyHost,
+                int proxyPort, String proxyUser, String proxyPassword, String proxyDomain,
+                String proxyWorkstation) throws ConfigError, GeneralSecurityException {
+            this.sslEnabled = sslEnabled;
             this.socketAddresses = socketAddresses;
             this.localAddress = localAddress;
+            this.userIoFilterChainBuilder = userIoFilterChainBuilder;
             this.fixSession = fixSession;
             this.reconnectIntervalInMillis = reconnectIntervalInMillis;
+            this.networkingOptions = networkingOptions;
+            this.eventHandlingStrategy = eventHandlingStrategy;
             this.sslConfig = sslConfig;
-            ioConnector = ProtocolFactory.createIoConnector(socketAddresses[0]);
-            CompositeIoFilterChainBuilder ioFilterChainBuilder = new CompositeIoFilterChainBuilder(
-                    userIoFilterChainBuilder);
 
-            if (sslEnabled) {
-                installSslFilter(ioFilterChainBuilder);
-            }
+            this.proxyType = proxyType;
+            this.proxyVersion = proxyVersion;
+            this.proxyHost = proxyHost;
+            this.proxyPort = proxyPort;
+            this.proxyUser = proxyUser;
+            this.proxyPassword = proxyPassword;
+            this.proxyDomain = proxyDomain;
+            this.proxyWorkstation = proxyWorkstation;
 
-            ioFilterChainBuilder.addLast(FIXProtocolCodecFactory.FILTER_NAME,
-                    new ProtocolCodecFilter(new FIXProtocolCodecFactory()));
-
-            ioConnector.setFilterChainBuilder(ioFilterChainBuilder);
-            ioHandler = new InitiatorIoHandler(fixSession, networkingOptions,
-                    eventHandlingStrategy);
+            setupIoConnector();
         }
 
-        private void installSslFilter(CompositeIoFilterChainBuilder ioFilterChainBuilder)
+        private void setupIoConnector() throws ConfigError, GeneralSecurityException {
+            final CompositeIoFilterChainBuilder ioFilterChainBuilder = new CompositeIoFilterChainBuilder(userIoFilterChainBuilder);
+
+            boolean hasProxy = proxyType != null && proxyPort > 0 && socketAddresses[nextSocketAddressIndex] instanceof InetSocketAddress;
+
+            SSLFilter sslFilter = null;
+            if (sslEnabled) {
+                sslFilter = installSslFilter(ioFilterChainBuilder, !hasProxy);
+            }
+
+            ioFilterChainBuilder.addLast(FIXProtocolCodecFactory.FILTER_NAME, new ProtocolCodecFilter(new FIXProtocolCodecFactory()));
+
+            IoConnector newConnector;
+            newConnector = ProtocolFactory.createIoConnector(socketAddresses[nextSocketAddressIndex]);
+            newConnector.setHandler(new InitiatorIoHandler(fixSession, networkingOptions, eventHandlingStrategy));
+            newConnector.setFilterChainBuilder(ioFilterChainBuilder);
+
+            if (hasProxy) {
+                ProxyConnector proxyConnector = ProtocolFactory.createIoProxyConnector(
+                        (SocketConnector) newConnector,
+                        (InetSocketAddress) socketAddresses[nextSocketAddressIndex],
+                        new InetSocketAddress(proxyHost, proxyPort),
+                        proxyType, proxyVersion, proxyUser, proxyPassword, proxyDomain, proxyWorkstation
+                );
+
+                proxyConnector.setHandler(new InitiatorProxyIoHandler(
+                        new InitiatorIoHandler(fixSession, networkingOptions, eventHandlingStrategy),
+                        sslFilter
+                ));
+
+                newConnector = proxyConnector;
+            }
+
+            if (ioConnector != null) {
+                ioConnector.dispose();
+            }
+            ioConnector = newConnector;
+        }
+
+        private SSLFilter installSslFilter(CompositeIoFilterChainBuilder ioFilterChainBuilder, boolean autoStart)
                 throws GeneralSecurityException {
-            SSLContext sslContext = SSLContextFactory.getInstance(sslConfig);
-            SSLFilter sslFilter = new SSLFilter(sslContext);
+            final SSLContext sslContext = SSLContextFactory.getInstance(sslConfig);
+            final SSLFilter sslFilter = new SSLFilter(sslContext, autoStart);
             sslFilter.setUseClientMode(true);
             sslFilter.setCipherSuites(sslConfig.getEnabledCipherSuites() != null ? sslConfig.getEnabledCipherSuites()
                     : SSLSupport.getDefaultCipherSuites(sslContext));
             sslFilter.setEnabledProtocols(sslConfig.getEnabledProtocols() != null ? sslConfig.getEnabledProtocols()
                     : SSLSupport.getSupportedProtocols(sslContext));
             ioFilterChainBuilder.addLast(SSLSupport.FILTER_NAME, sslFilter);
+            return sslFilter;
         }
 
         public synchronized void run() {
-            if (connectFuture == null) {
-                if (shouldReconnect()) {
-                    connect();
+            resetIoConnector();
+            try {
+                if (connectFuture == null) {
+                    if (shouldReconnect()) {
+                        connect();
+                    }
+                } else {
+                    pollConnectFuture();
                 }
-            } else {
-                pollConnectFuture();
+            } catch (Throwable e) {
+                LogUtil.logThrowable(fixSession.getLog(), "Exception during ConnectTask run", e);
             }
         }
 
         private void connect() {
-            lastReconnectAttemptTime = SystemTime.currentTimeMillis();
-            SocketAddress nextSocketAddress = getNextSocketAddress();
-            ioConnector.setHandler(ioHandler);
             try {
+                lastReconnectAttemptTime = SystemTime.currentTimeMillis();
+                SocketAddress nextSocketAddress = getNextSocketAddress();
                 if (localAddress == null) {
                     connectFuture = ioConnector.connect(nextSocketAddress);
                 } else {
@@ -220,8 +283,7 @@ public class IoSessionInitiator {
         }
 
         private int getCurrentSocketAddressIndex() {
-            int currentSocketAddressIndex = (nextSocketAddressIndex + socketAddresses.length - 1) % socketAddresses.length;
-            return currentSocketAddressIndex;
+            return (nextSocketAddressIndex + socketAddresses.length - 1) % socketAddresses.length;
         }
 
         private boolean shouldReconnect() {
@@ -265,6 +327,21 @@ public class IoSessionInitiator {
 
         public Session getFixSession() {
             return fixSession;
+        }
+
+        private void resetIoConnector() {
+            if (ioSession != null && Boolean.TRUE.equals(ioSession.getAttribute(SessionConnector.QFJ_RESET_IO_CONNECTOR))) {
+                try {
+                    setupIoConnector();
+                    if (connectFuture != null) {
+                        connectFuture.cancel();
+                    }
+                    connectFuture = null;
+                    ioSession = null;
+                } catch (Throwable e) {
+                    LogUtil.logThrowable(fixSession.getLog(), "Exception during resetIoConnector call", e);
+                }
+            }
         }
     }
 

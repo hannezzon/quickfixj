@@ -19,13 +19,6 @@
 
 package quickfix;
 
-import java.io.UnsupportedEncodingException;
-import java.math.BigDecimal;
-import java.util.Arrays;
-import java.util.Date;
-
-import static junit.framework.Assert.assertTrue;
-import static junit.framework.Assert.assertEquals;
 import org.junit.Test;
 import org.quickfixj.CharsetSupport;
 import quickfix.field.MDUpdateAction;
@@ -33,6 +26,17 @@ import quickfix.field.RawData;
 import quickfix.field.Side;
 import quickfix.field.TradeCondition;
 import quickfix.fix50.MarketDataIncrementalRefresh;
+
+import java.io.UnsupportedEncodingException;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.Arrays;
+import java.util.Date;
+
+import static junit.framework.Assert.assertEquals;
+import static junit.framework.Assert.assertTrue;
 
 public class FieldTest {
 
@@ -48,7 +52,7 @@ public class FieldTest {
     }
 
     private void testFieldCalcuations(String value, int checksum, int length) {
-        Field<String> field = new Field<String>(12, value);
+        Field<String> field = new Field<>(12, value);
         field.setObject(value);
         assertEquals("12=" + value, field.toString());
         assertEquals(checksum, field.getChecksum());
@@ -98,7 +102,7 @@ public class FieldTest {
     @Test
     public void testUtcDateOnlyField() {
         UtcDateOnlyField field = new UtcDateOnlyField(11);
-        Date date = new Date();
+        LocalDate date = LocalDate.now();
         field.setValue(date);
         assertEquals(11, field.getTag());
         assertEquals(date, field.getValue());
@@ -110,7 +114,7 @@ public class FieldTest {
     @Test
     public void testUtcTimeOnlyField() {
         UtcTimeOnlyField field = new UtcTimeOnlyField(11);
-        Date date = new Date();
+        LocalTime date = LocalTime.now();
         field.setValue(date);
         assertEquals(11, field.getTag());
         assertEquals(date, field.getValue());
@@ -122,7 +126,7 @@ public class FieldTest {
     @Test
     public void testUtcTimeStampField() {
         UtcTimeStampField field = new UtcTimeStampField(11);
-        Date date = new Date();
+        LocalDateTime date = LocalDateTime.now();
         field.setValue(date);
         assertEquals(11, field.getTag());
         assertEquals(date, field.getValue());
@@ -164,7 +168,7 @@ public class FieldTest {
         assertEquals(33, field.getTag());
         assertEquals(45.6, field.getValue(), 0);
     }
-    
+
     @Test(expected = NumberFormatException.class)
     public void testDoubleFieldException() {
         DoubleField field = new DoubleField(11, Double.NaN);
@@ -247,9 +251,9 @@ public class FieldTest {
         assertEqualsAndHash(new StringField(11, "foo"), new StringField(11, "foo"));
         assertEqualsAndHash(new BooleanField(11, true), new BooleanField(11, true));
         assertEqualsAndHash(new CharField(11, 'x'), new CharField(11, 'x'));
-        Date date = new Date();
-        assertEqualsAndHash(new UtcDateOnlyField(11, date), new UtcDateOnlyField(11, date));
-        assertEqualsAndHash(new UtcTimeOnlyField(11, date), new UtcTimeOnlyField(11, date));
+        LocalDateTime date = LocalDateTime.now();
+        assertEqualsAndHash(new UtcDateOnlyField(11, date.toLocalDate()), new UtcDateOnlyField(11, date.toLocalDate()));
+        assertEqualsAndHash(new UtcTimeOnlyField(11, date.toLocalTime()), new UtcTimeOnlyField(11, date.toLocalTime()));
         assertEqualsAndHash(new UtcTimeStampField(11, date), new UtcTimeStampField(11, date));
     }
 
@@ -257,8 +261,8 @@ public class FieldTest {
     @Test
     public void testMultipleStringValue() throws Exception {
 
-        assertEquals(FieldType.MultipleStringValue, FieldType.fromName("notused", "MULTIPLESTRINGVALUE"));
-        assertEquals(FieldType.MultipleValueString, FieldType.fromName("notused", "MULTIPLEVALUESTRING"));
+        assertEquals(FieldType.MULTIPLESTRINGVALUE, FieldType.fromName("notused", "MULTIPLESTRINGVALUE"));
+        assertEquals(FieldType.MULTIPLEVALUESTRING, FieldType.fromName("notused", "MULTIPLEVALUESTRING"));
 
         MarketDataIncrementalRefresh md = new MarketDataIncrementalRefresh();
         MarketDataIncrementalRefresh.NoMDEntries value = new MarketDataIncrementalRefresh.NoMDEntries();
@@ -269,7 +273,7 @@ public class FieldTest {
         DataDictionary dd = new DataDictionary("FIX50.xml");
         dd.validate(md);
     }
-    
+
     private void assertEqualsAndHash(Field<?> field1, Field<?> field2) {
         assertEquals("fields not equal", field1, field2);
         assertEquals("fields hashcode not equal", field1.hashCode(), field2.hashCode());

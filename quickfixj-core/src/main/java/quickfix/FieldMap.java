@@ -19,17 +19,6 @@
 
 package quickfix;
 
-import java.io.Serializable;
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.TreeMap;
-
 import quickfix.field.BeginString;
 import quickfix.field.BodyLength;
 import quickfix.field.CheckSum;
@@ -43,6 +32,19 @@ import quickfix.field.converter.UtcDateOnlyConverter;
 import quickfix.field.converter.UtcTimeOnlyConverter;
 import quickfix.field.converter.UtcTimestampConverter;
 
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.TreeMap;
+
 /**
  * Field container used by messages, groups, and composites.
  */
@@ -54,18 +56,29 @@ public abstract class FieldMap implements Serializable {
 
     private final TreeMap<Integer, Field<?>> fields;
 
-    private final TreeMap<Integer, List<Group>> groups = new TreeMap<Integer, List<Group>>();
+    private final TreeMap<Integer, List<Group>> groups = new TreeMap<>();
 
+    /**
+     * Constructs a FieldMap with the given field order.
+     * The given array must not be modified.
+     *
+     * @param fieldOrder the field order, or null if there is none
+     */
     protected FieldMap(int[] fieldOrder) {
         this.fieldOrder = fieldOrder;
-        fields = new TreeMap<Integer, Field<?>>(
-                fieldOrder != null ? new FieldOrderComparator() : null);
+        fields = new TreeMap<>(fieldOrder != null ? new FieldOrderComparator() : null);
     }
 
     protected FieldMap() {
         this(null);
     }
 
+    /**
+     * Returns the order of fields in the group.
+     * The returned array must not be modified.
+     *
+     * @return the field order
+     */
     public int[] getFieldOrder() {
         return fieldOrder;
     }
@@ -171,23 +184,31 @@ public abstract class FieldMap implements Serializable {
         setField(new StringField(field, DecimalConverter.convert(value, padding)));
     }
 
-    public void setUtcTimeStamp(int field, Date value) {
+    public void setUtcTimeStamp(int field, LocalDateTime value) {
         setUtcTimeStamp(field, value, false);
     }
 
-    public void setUtcTimeStamp(int field, Date value, boolean includeMilliseconds) {
-        setField(new StringField(field, UtcTimestampConverter.convert(value, includeMilliseconds)));
+    public void setUtcTimeStamp(int field, LocalDateTime value, boolean includeMilliseconds) {
+        setField(new StringField(field, UtcTimestampConverter.convert(value, includeMilliseconds ? UtcTimestampPrecision.MILLIS : UtcTimestampPrecision.SECONDS)));
     }
 
-    public void setUtcTimeOnly(int field, Date value) {
+    public void setUtcTimeStamp(int field, LocalDateTime value, UtcTimestampPrecision precision) {
+        setField(new StringField(field, UtcTimestampConverter.convert(value, precision)));
+    }
+
+    public void setUtcTimeOnly(int field, LocalTime value) {
         setUtcTimeOnly(field, value, false);
     }
 
-    public void setUtcTimeOnly(int field, Date value, boolean includeMillseconds) {
-        setField(new StringField(field, UtcTimeOnlyConverter.convert(value, includeMillseconds)));
+    public void setUtcTimeOnly(int field, LocalTime value, boolean includeMilliseconds) {
+        setField(new StringField(field, UtcTimeOnlyConverter.convert(value, includeMilliseconds ? UtcTimestampPrecision.MILLIS : UtcTimestampPrecision.SECONDS)));
     }
 
-    public void setUtcDateOnly(int field, Date value) {
+    public void setUtcTimeOnly(int field, LocalTime value, UtcTimestampPrecision precision) {
+        setField(new StringField(field, UtcTimeOnlyConverter.convert(value, precision)));
+    }
+
+    public void setUtcDateOnly(int field, LocalDate value) {
         setField(new StringField(field, UtcDateOnlyConverter.convert(value)));
     }
 
@@ -251,25 +272,25 @@ public abstract class FieldMap implements Serializable {
         }
     }
 
-    public Date getUtcTimeStamp(int field) throws FieldNotFound {
+    public LocalDateTime getUtcTimeStamp(int field) throws FieldNotFound {
         try {
-            return UtcTimestampConverter.convert(getString(field));
+            return UtcTimestampConverter.convertToLocalDateTime(getString(field));
         } catch (final FieldConvertError e) {
             throw newIncorrectDataException(e, field);
         }
     }
 
-    public Date getUtcTimeOnly(int field) throws FieldNotFound {
+    public LocalTime getUtcTimeOnly(int field) throws FieldNotFound {
         try {
-            return UtcTimeOnlyConverter.convert(getString(field));
+            return UtcTimeOnlyConverter.convertToLocalTime(getString(field));
         } catch (final FieldConvertError e) {
             throw newIncorrectDataException(e, field);
         }
     }
 
-    public Date getUtcDateOnly(int field) throws FieldNotFound {
+    public LocalDate getUtcDateOnly(int field) throws FieldNotFound {
         try {
-            return UtcDateOnlyConverter.convert(getString(field));
+            return UtcDateOnlyConverter.convertToLocalDate(getString(field));
         } catch (final FieldConvertError e) {
             throw newIncorrectDataException(e, field);
         }
@@ -307,11 +328,11 @@ public abstract class FieldMap implements Serializable {
     }
 
     public void setField(UtcTimeStampField field) {
-        setUtcTimeStamp(field.getField(), field.getValue(), field.showMilliseconds());
+        setUtcTimeStamp(field.getField(), field.getValue(), field.getPrecision());
     }
 
     public void setField(UtcTimeOnlyField field) {
-        setUtcTimeOnly(field.getField(), field.getValue(), field.showMilliseconds());
+        setUtcTimeOnly(field.getField(), field.getValue(), field.getPrecision());
     }
 
     public void setField(UtcDateOnlyField field) {
@@ -400,7 +421,7 @@ public abstract class FieldMap implements Serializable {
         fields.clear();
         fields.putAll(source.fields);
         for (Entry<Integer, List<Group>> entry : source.groups.entrySet()) {
-            final List<Group> clones = new ArrayList<Group>();
+            final List<Group> clones = new ArrayList<>();
             for (final Group group : entry.getValue()) {
                 final Group clone = new Group(group.getFieldTag(),
                         group.delim(), group.getFieldOrder());
@@ -558,12 +579,7 @@ public abstract class FieldMap implements Serializable {
     }
 
     public List<Group> getGroups(int field) {
-        List<Group> groupList = groups.get(field);
-        if (groupList == null) {
-            groupList = new ArrayList<Group>();
-            groups.put(field, groupList);
-        }
-        return groupList;
+        return groups.computeIfAbsent(field, k -> new ArrayList<>());
     }
 
     public Group getGroup(int num, Group group) throws FieldNotFound {

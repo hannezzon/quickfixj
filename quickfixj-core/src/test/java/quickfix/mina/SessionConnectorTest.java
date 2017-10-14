@@ -19,6 +19,21 @@
 
 package quickfix.mina;
 
+import junit.framework.TestCase;
+import quickfix.Acceptor;
+import quickfix.ConfigError;
+import quickfix.DefaultSessionFactory;
+import quickfix.FixVersions;
+import quickfix.MemoryStoreFactory;
+import quickfix.RuntimeError;
+import quickfix.SLF4JLogFactory;
+import quickfix.Session;
+import quickfix.SessionFactory;
+import quickfix.SessionID;
+import quickfix.SessionSettings;
+import quickfix.SessionState;
+import quickfix.UnitTestApplication;
+
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.lang.reflect.Field;
@@ -28,29 +43,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import junit.framework.TestCase;
-import quickfix.Acceptor;
-import quickfix.ConfigError;
-import quickfix.DefaultSessionFactory;
-import quickfix.FixVersions;
-import quickfix.MemoryStoreFactory;
-import quickfix.RuntimeError;
-import quickfix.ScreenLogFactory;
-import quickfix.Session;
-import quickfix.SessionFactory;
-import quickfix.SessionID;
-import quickfix.SessionSettings;
-import quickfix.SessionState;
-import quickfix.UnitTestApplication;
-
 public class SessionConnectorTest extends TestCase {
-    private final List<PropertyChangeEvent> propertyChangeEvents = new ArrayList<PropertyChangeEvent>();
+    private final List<PropertyChangeEvent> propertyChangeEvents = new ArrayList<>();
 
     public void testConnector() throws Exception {
         SessionID sessionID = new SessionID(FixVersions.BEGINSTRING_FIX40, "TW", "ISLD");
         SessionSettings settings = setUpSessionSettings(sessionID);
         DefaultSessionFactory sessionFactory = new DefaultSessionFactory(new UnitTestApplication(),
-                new MemoryStoreFactory(), new ScreenLogFactory(true, true, true));
+                new MemoryStoreFactory(), new SLF4JLogFactory(new SessionSettings()));
 
         SessionConnector connector = new SessionConnectorUnderTest(settings, sessionFactory);
 
@@ -91,7 +91,7 @@ public class SessionConnectorTest extends TestCase {
         SessionID sessionID1 = new SessionID(FixVersions.BEGINSTRING_FIX40, "TW", "ISLD");
         SessionSettings settings = setUpSessionSettings(sessionID1);
         DefaultSessionFactory sessionFactory = new DefaultSessionFactory(new UnitTestApplication(),
-                new MemoryStoreFactory(), new ScreenLogFactory(true, true, true));
+                new MemoryStoreFactory(), new SLF4JLogFactory(new SessionSettings()));
 
         SessionConnector connector = new SessionConnectorUnderTest(settings, sessionFactory);
 
@@ -103,7 +103,7 @@ public class SessionConnectorTest extends TestCase {
         connector.addPropertyChangeListener(connectorListener);
         connector.removePropertyChangeListener(connectorListener);
 
-        Map<SessionID, Session> sessions = new HashMap<SessionID, Session>();
+        Map<SessionID, Session> sessions = new HashMap<>();
         sessions.put(session1.getSessionID(), session1);
         connector.setSessions(sessions);
 
@@ -129,6 +129,7 @@ public class SessionConnectorTest extends TestCase {
         assertNotNull(session2);
         sessions.put(session2.getSessionID(), session2);
         assertFalse(connector.isLoggedOn());
+        assertTrue(connector.anyLoggedOn());
     }
 
     /**
@@ -139,16 +140,16 @@ public class SessionConnectorTest extends TestCase {
         SessionID sessionID2 = new SessionID(FixVersions.BEGINSTRING_FIX40, "me", "you");
         SessionSettings settings = setUpSessionSettings(sessionID);
         DefaultSessionFactory sessionFactory = new DefaultSessionFactory(new UnitTestApplication(),
-                new MemoryStoreFactory(), new ScreenLogFactory(true, true, true));
+                new MemoryStoreFactory(), new SLF4JLogFactory(new SessionSettings()));
 
         SessionConnector connector = new SessionConnectorUnderTest(settings, sessionFactory);
-        connector.setSessions(new HashMap<SessionID, Session>());
+        connector.setSessions(new HashMap<>());
         Session session = connector.createSession(sessionID);
 
         // one-time use connector to create a slightly different session
         SessionSettings settings2 = setUpSessionSettings(sessionID2);
         SessionConnector connector2 = new SessionConnectorUnderTest(settings2, sessionFactory);
-        connector.setSessions(new HashMap<SessionID, Session>());
+        connector.setSessions(new HashMap<>());
         Session session2 = connector2.createSession(sessionID2);
         assertNotNull(session);
         assertNotNull(session2);
@@ -159,7 +160,7 @@ public class SessionConnectorTest extends TestCase {
         connector.addDynamicSession(session2);
         assertEquals(2, connector.getManagedSessions().size());
         // the list can be in arbitrary order so let's make sure that we get both
-        HashMap<SessionID, Session> map = new HashMap<SessionID, Session>();
+        HashMap<SessionID, Session> map = new HashMap<>();
         for (Session s : connector.getManagedSessions()) {
             map.put(s.getSessionID(), s);
         }

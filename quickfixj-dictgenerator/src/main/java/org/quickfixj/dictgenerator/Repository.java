@@ -19,8 +19,11 @@
 
 package org.quickfixj.dictgenerator;
 
+import org.dom4j.Document;
+import org.dom4j.Node;
+import org.dom4j.io.SAXReader;
+
 import java.io.File;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -28,21 +31,17 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
-import org.dom4j.Document;
-import org.dom4j.Node;
-import org.dom4j.io.SAXReader;
-
 public class Repository {
 
     private final File repository;
     private final Document components, enums, fields, msgContents, msgType;
-    private final Map<String, MsgType> sessionMsgTypes = new TreeMap<String, MsgType>(), applicationMsgTypes = new TreeMap<String, MsgType>();
-    private final Map<String, Field> allFields = new TreeMap<String, Field>();
-    private final Map<String, Component> allComponents = new TreeMap<String, Component>();
+    private final Map<String, MsgType> sessionMsgTypes = new TreeMap<>(), applicationMsgTypes = new TreeMap<>();
+    private final Map<String, Field> allFields = new TreeMap<>();
+    private final Map<String, Component> allComponents = new TreeMap<>();
 
     public Repository(File repositoryFile) throws Exception {
         this.repository = repositoryFile;
-        Set<String> requiredFiles = new HashSet<String>();
+        Set<String> requiredFiles = new HashSet<>();
         requiredFiles.add("Components.xml");
         requiredFiles.add("Enums.xml");
         requiredFiles.add("Fields.xml");
@@ -159,7 +158,7 @@ public class Repository {
             allFields.put(field.getTag(), field);
             // Find enums
             List<?> enumNodes = enums.selectNodes("//dataroot/Enums[Tag=" + tag + "]");
-            Collections.sort(enumNodes, new EnumNodeComparator());
+            enumNodes.sort(new EnumNodeComparator());
             if (!enumNodes.isEmpty()) {
                 for (Object enumO : enumNodes) {
                     Node enumNode = (Node) enumO;
@@ -223,7 +222,7 @@ public class Repository {
 
     private List<?> getMsgContents(String msgID) {
         List<?> nodes = msgContents.selectNodes("//dataroot/MsgContents[MsgID=" + msgID + "]");
-        Collections.sort(nodes, new MsgContentNodeComparator());
+        nodes.sort(new MsgContentNodeComparator());
         return nodes;
     }
 

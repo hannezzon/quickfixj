@@ -1,4 +1,5 @@
-/*******************************************************************************
+/*
+ ******************************************************************************
  * Copyright (c) quickfixengine.org  All rights reserved.
  *
  * This file is part of the QuickFIX FIX Engine
@@ -19,15 +20,19 @@
 
 package quickfix.mina;
 
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-
 import quickfix.LogUtil;
 import quickfix.Message;
 import quickfix.Session;
 import quickfix.SessionID;
 import quickfix.SystemTime;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Processes messages for all sessions in a single thread.
@@ -36,13 +41,18 @@ public class SingleThreadedEventHandlingStrategy implements EventHandlingStrateg
     public static final String MESSAGE_PROCESSOR_THREAD_NAME = "QFJ Message Processor";
     private final BlockingQueue<SessionMessageEvent> eventQueue;
     private final SessionConnector sessionConnector;
-    private volatile Thread messageProcessingThread;
+    private volatile ThreadAdapter messageProcessingThread;
     private volatile boolean isStopped;
+    private Executor executor;
     private long stopTime = 0L;
 
     public SingleThreadedEventHandlingStrategy(SessionConnector connector, int queueCapacity) {
         sessionConnector = connector;
-        eventQueue = new LinkedBlockingQueue<SessionMessageEvent>(queueCapacity);
+        eventQueue = new LinkedBlockingQueue<>(queueCapacity);
+    }
+
+    public void setExecutor(Executor executor) {
+        this.executor = executor;
     }
 
     @Override
@@ -68,9 +78,9 @@ public class SingleThreadedEventHandlingStrategy implements EventHandlingStrateg
             synchronized (this) {
                 if (isStopped) {
                     if (!eventQueue.isEmpty()) {
-                        final LinkedBlockingQueue<SessionMessageEvent> tempQueue = new LinkedBlockingQueue<SessionMessageEvent>();
-                        eventQueue.drainTo(tempQueue);
-                        for (SessionMessageEvent event : tempQueue) {
+                        final List<SessionMessageEvent> tempList = new ArrayList<>();
+                        eventQueue.drainTo(tempList);
+                        for (SessionMessageEvent event : tempList) {
                             event.processMessage();
                         }
                     }
@@ -91,7 +101,7 @@ public class SingleThreadedEventHandlingStrategy implements EventHandlingStrateg
                     event.processMessage();
                 }
             } catch (InterruptedException e) {
-                // ignore
+                Thread.currentThread().interrupt();
             }
         }
     }
@@ -105,7 +115,7 @@ public class SingleThreadedEventHandlingStrategy implements EventHandlingStrateg
      * If thread is still alive, an attempt is made to stop it.
      * An IllegalStateException is thrown if stopping the old thread
      * was not successful.
-     * 
+     *
      * This method must not be called by several threads concurrently.
      */
     public void blockInThread() {
@@ -118,14 +128,11 @@ public class SingleThreadedEventHandlingStrategy implements EventHandlingStrateg
         }
 
         startHandlingMessages();
-        messageProcessingThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                sessionConnector.log.info("Started " + MESSAGE_PROCESSOR_THREAD_NAME);
-                block();
-                sessionConnector.log.info("Stopped " + MESSAGE_PROCESSOR_THREAD_NAME);
-            }
-        }, MESSAGE_PROCESSOR_THREAD_NAME);
+        messageProcessingThread = new ThreadAdapter(() -> {
+            sessionConnector.log.info("Started " + MESSAGE_PROCESSOR_THREAD_NAME);
+            block();
+            sessionConnector.log.info("Stopped " + MESSAGE_PROCESSOR_THREAD_NAME);
+        }, MESSAGE_PROCESSOR_THREAD_NAME, executor);
         messageProcessingThread.setDaemon(true);
         messageProcessingThread.start();
     }
@@ -158,10 +165,10 @@ public class SingleThreadedEventHandlingStrategy implements EventHandlingStrateg
         }
         isStopped = true;
     }
-    
+
     public void stopHandlingMessages(boolean join) {
         stopHandlingMessages();
-        
+
         if (join) {
             try {
                 messageProcessingThread.join();
@@ -181,5 +188,97 @@ public class SingleThreadedEventHandlingStrategy implements EventHandlingStrateg
         // we only have one queue for all sessions
         return getQueueSize();
     }
-    
+
+	/**
+	 * A stand-in for the Thread class that delegates to an Executor.
+	 * Implements all the API required by pre-existing QFJ code.
+	 */
+	static final class ThreadAdapter {
+
+		private final Executor executor;
+		private final RunnableWrapper wrapper;
+
+		ThreadAdapter(Runnable command, String name, Executor executor) {
+			wrapper = new RunnableWrapper(command, name);
+			this.executor = executor != null ? executor : new DedicatedThreadExecutor(name);
+		}
+
+		public void join() throws InterruptedException {
+			wrapper.join();
+		}
+
+		public void setDaemon(boolean b) {
+			/* No-Op. Already set for DedicatedThreadExecutor. Not relevant for externally supplied Executors. */
+		}
+
+		public boolean isAlive() {
+			return wrapper.isAlive();
+		}
+
+		public void start() {
+			executor.execute(wrapper);
+		}
+
+		/**
+		 * Provides the Thread::join and Thread::isAlive semantics on the nested Runnable.
+		 */
+		static final class RunnableWrapper implements Runnable {
+
+			private final CountDownLatch latch = new CountDownLatch(1);
+			private final Runnable command;
+			private final String name;
+
+			public RunnableWrapper(Runnable command, String name) {
+                            this.command = command;
+                            this.name = name;
+			}
+
+                        @Override
+                        public void run() {
+                            Thread currentThread = Thread.currentThread();
+                            String threadName = currentThread.getName();
+                            try {
+                                if (!name.equals(threadName)) {
+                                    currentThread.setName(name + " (" + threadName + ")");
+                                }
+                                command.run();
+                            } finally {
+                                latch.countDown();
+                                currentThread.setName(threadName);
+                            }
+                        }
+
+			public void join() throws InterruptedException {
+                            latch.await();
+			}
+
+			public boolean isAlive() {
+                            return latch.getCount() > 0;
+			}
+
+		}
+
+		/**
+		 * An Executor that uses it's own dedicated Thread.
+		 * Provides equivalent behavior to the prior non-Executor approach.
+		 */
+		static final class DedicatedThreadExecutor implements Executor {
+
+			private final String name;
+			
+			DedicatedThreadExecutor(String name) {
+				this.name = name;
+			}
+
+			@Override
+			public void execute(Runnable command) {
+				Thread thread = new Thread(command, name);
+				thread.setDaemon(true);
+				thread.start();
+			}
+
+		}
+
+	}
+
 }

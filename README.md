@@ -3,6 +3,12 @@ QuickFIX/J updated by hannezzon
 
 This is a fork of the official QuickFIX/J project repository https://github.com/quickfix-j/quickfixj.git.
 
+[![Build Status](https://travis-ci.org/quickfix-j/quickfixj.svg?branch=master)](https://travis-ci.org/quickfix-j/quickfixj)
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/org.quickfixj/quickfixj-core/badge.svg)](https://maven-badges.herokuapp.com/maven-central/org.quickfixj/quickfixj-core)
+
+This is the official QuickFIX/J project repository.
+
+
 Work is in progress to upgrade an already great library to use newer versions of dependencies.
 
 Description from QuickFIX/J official repository:
@@ -14,5 +20,6 @@ It is a 100% Java open source implementation of the popular C++ QuickFIX engine.
 
 For more information see the project website at http://www.quickfixj.org.
 
-Please report issues at http://www.quickfixj.org/jira.
+For asking questions please use the mailing list: https://lists.sourceforge.net/lists/listinfo/quickfixj-users
 
+Please report issues at http://www.quickfixj.org/jira.

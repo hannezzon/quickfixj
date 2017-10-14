@@ -121,21 +121,21 @@
   </TR>
   <TR ALIGN="left" VALIGN="middle">
     <TD> <I>TargetCompID</I> </TD>
-    <TD> (Optional) counterparty's compID as associated with this FIX session </TD>
+    <TD> Counterparty's compID as associated with this FIX session </TD>
     <TD> case-sensitive alpha-numeric string </TD>
 
     <TD>&nbsp; </TD>
   </TR>
   <TR ALIGN="left" VALIGN="middle">
     <TD> <I>TargetSubID</I> </TD>
-    <TD> (Optional)  counterparty's subID as associated with this FIX session </TD>
+    <TD> (Optional)  Counterparty's subID as associated with this FIX session </TD>
     <TD> case-sensitive alpha-numeric string </TD>
 
     <TD>&nbsp; </TD>
   </TR>
   <TR ALIGN="left" VALIGN="middle">
     <TD> <I>TargetLocationID</I> </TD>
-    <TD> (Optional) counterparty's locationID as associated with this FIX session </TD>
+    <TD> (Optional) Counterparty's locationID as associated with this FIX session </TD>
     <TD> case-sensitive alpha-numeric string </TD>
 
     <TD>&nbsp; </TD>
@@ -202,15 +202,29 @@
   </TR>
   <TR ALIGN="left" VALIGN="middle">
     <TD> <I>StartDay</I> </TD>
-    <TD> For week long sessions, the starting day of week for the session. Use in combination with StartTime. </TD>
+    <TD> For week long sessions, the starting day of week for the session.
+      <br>Use in combination with StartTime.
+      <br>Incompatible with Weekdays</TD>
     <TD> Day of week in the default locale (e.g. Monday, mon, lundi, lun. etc.)</TD>
 
     <TD>&nbsp; </TD>
   </TR>
   <TR ALIGN="left" VALIGN="middle">
     <TD> <I>EndDay</I> </TD>
-    <TD> For week long sessions, the ending day of week for the session. Use in combination with EndTime. </TD>
+    <TD> For week long sessions, the ending day of week for the session.
+      <br>Use in combination with EndTime.
+      <br>Incompatible with Weekdays</TD>
     <TD> Day of week in the default locale (e.g. Monday, mon, lundi, lun. etc.)</TD>
+
+    <TD>&nbsp; </TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD> <I>Weekdays</I> </TD>
+    <TD> For daily sessions that are active on specific days of the week.
+      <br>Use in combination with StartTime and EndTime.
+      <br>Incompatible with StartDay and EndDay.
+      <br>If StartTime is before EndTime then the day corresponds to the StartTime.</TD>
+    <TD> Comma-delimited list of days of the week in the default locale (e.g. "Sun,Mon,Tue", "Dimanche,Lundi,Mardi" etc.)</TD>
 
     <TD>&nbsp; </TD>
   </TR>
@@ -221,12 +235,19 @@
     <TD> N </TD>
   </TR>
   <TR ALIGN="left" VALIGN="middle">
-    <TD> <I>MillisecondsInTimeStamp</I> </TD>
-    <TD> Determines if milliseconds should be added to
-    timestamps. Only available for FIX.4.2 and greater. </TD>
-    <TD> Y<br>N</TD>
+    <TD> <I>TimeStampPrecision</I> </TD>
+    <TD> Determines precision for timestamps in (Orig)SendingTime fields.
+        Only available for FIX.4.2 and greater.<br><br>
+        NB: This configuration is only considered for messages that are sent out. QuickFIX/J is able to receive UtcTimestamp fields with up to picosecond precision.<br>
+        Please note however that only up to nanosecond precision will be stored, i.e. the picoseconds will be truncated.
+    </TD>
+    <TD> One of
+        <ul><li>SECONDS</li>
+            <li>MILLIS</li>
+            <li>MICROS</li>
+            <li>NANOS</li></ul></TD>
 
-    <TD> Y </TD>
+    <TD> MILLIS </TD>
   </TR>
   <TR ALIGN="left" VALIGN="middle">
     <TD> <I>ClosedResendInterval</I></TD>
@@ -627,6 +648,58 @@
   </TR>
 
   <TR ALIGN="center" VALIGN="middle">
+    <TD COLSPAN="4" class="subsection"><A NAME="Security">Socks Proxy Options (Initiator only)</A></TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD valign="top"> <I>ProxyType</I></TD>
+    <TD>Proxy type</TD>
+    <TD>http<BR>socks</TD>
+    <TD></TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD valign="top"> <I>ProxyVersion</I></TD>
+    <TD>Proxy HTTP or Socks version to use</TD>
+    <TD>For socks: 4, 4a or 5 <BR> For http: 1.0 or 1.1</TD>
+    <TD>For socks:<BR>For http: 1.0</TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD valign="top"> <I>ProxyHost</I></TD>
+    <TD>Proxy server hostname or IP</TD>
+    <TD>valid IP address in the format of x.x.x.x or a domain name</TD>
+    <TD></TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD valign="top"> <I>ProxyPort</I></TD>
+    <TD>Proxy server port</TD>
+    <TD>positive integer</TD>
+    <TD></TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD valign="top"> <I>ProxyUser</I></TD>
+    <TD>Proxy user</TD>
+    <TD></TD>
+    <TD></TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD valign="top"> <I>ProxyPassword</I></TD>
+    <TD>Proxy password</TD>
+    <TD></TD>
+    <TD></TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD valign="top"> <I>ProxyDomain</I></TD>
+    <TD>Proxy domain (For http proxy)</TD>
+    <TD></TD>
+    <TD></TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD valign="top"> <I>ProxyWorkstation</I></TD>
+    <TD>Proxy workstation (For http proxy)</TD>
+    <TD></TD>
+    <TD></TD>
+  </TR>
+
+  <TR ALIGN="center" VALIGN="middle">
     <TD COLSPAN="4" class="subsection"><A NAME="Socket">Socket Options (Acceptor or Initiator)</A></TD>
   </TR>
   <TR ALIGN="center" VALIGN="middle">
@@ -904,6 +977,40 @@
     <TD>"" (empty string)</TD>
   </TR>
 
+  <TR ALIGN="left" VALIGN="middle">
+    <TD><I>JdbcMaxActiveConnection</I></TD>
+    <TD>Specifies the maximum number of connections to the database.</TD>
+    <TD>Any number</TD>
+    <TD>32</TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD><I>JdbcMaxActiveTime</I></TD>
+    <TD>Specifies if the housekeeper comes across a thread that has been active for longer than
+      this (milliseconds) then it will kill it. So make sure you set this to a number bigger than your
+      slowest expected response!</TD>
+    <TD>Any number</TD>
+    <TD>5000</TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD><I>JdbcMaxConnectionLifeTime</I></TD>
+    <TD>Specifies the maximum amount of time that a connection exists for before
+      it is killed (milliseconds).</TD>
+    <TD>Any number</TD>
+    <TD>28800000</TD>
+  </TR>
+  <TR ALIGN="left" VALIGN="middle">
+    <TD><I>JdbcSimultaneousBuildThrottle</I></TD>
+    <TD>Specifies the maximum number of connections we can be building at any one time.
+        That is, the number of new connections that have been requested but aren't yet
+        available for use. Because connections can be built using more than one thread
+        (for instance, when they are built on demand) and it takes a finite time between
+        deciding to build the connection and it becoming available we need some way of
+        ensuring that a lot of threads don't all decide to build a connection at once.
+        (We could solve this in a smarter way - and indeed we will one day)</TD>
+    <TD>Any number</TD>
+    <TD>32</TD>
+  </TR>
+
   <TR ALIGN="center" VALIGN="middle">
 
     <TD COLSPAN="4" class="subsection"><A NAME="Logging">Logging</A></TD>
@@ -1023,7 +1130,6 @@
     <TD>N</TD>
   </TR>
 
-
   <TR ALIGN="center" VALIGN="middle">
 
     <TD COLSPAN="4" class="subsection"><A NAME="Miscellaneous">Miscellaneous</A></TD>
@@ -1133,11 +1239,9 @@
   ReconnectInterval=60
   SenderCompID=TW
 
-
   # session definition
   [SESSION]
   # inherit ConnectionType, ReconnectInterval and SenderCompID from default
-
   BeginString=FIX.4.1
   TargetCompID=ARCA
   StartTime=12:30:00
@@ -1146,7 +1250,6 @@
   SocketConnectPort=9823
   SocketConnectHost=123.123.123.123
   DataDictionary=somewhere/FIX41.xml
-
 
   [SESSION]
   BeginString=FIX.4.0
@@ -1157,7 +1260,6 @@
   SocketConnectPort=8323
   SocketConnectHost=23.23.23.23
   DataDictionary=somewhere/FIX40.xml
-
 
   [SESSION]
   BeginString=FIX.4.2

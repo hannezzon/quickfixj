@@ -19,11 +19,12 @@
 
 package org.quickfixj.codegenerator;
 
-import java.io.File;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.FileUtils;
+
+import java.io.File;
 
 /**
  * A mojo that uses the quickfix code generator to generate
@@ -83,7 +84,7 @@ public class GenerateMojo extends AbstractMojo {
      *
      * @parameter default-value = "quickfix.field"
      */
-    private final String fieldPackage = "quickfix.field";
+    private String fieldPackage = "quickfix.field";
 
     /**
      * The Maven project to act upon.
@@ -137,8 +138,6 @@ public class GenerateMojo extends AbstractMojo {
             task.setOrderedFields(orderedFields);
             task.setDecimalGenerated(decimal);
             generator.generate(task);
-        } catch (Exception e) {
-            throw new MojoExecutionException("QuickFIX code generator execution failed", e);
         } catch (Throwable t) {
             throw new MojoExecutionException("QuickFIX code generator execution failed", t);
         }
@@ -245,5 +244,59 @@ public class GenerateMojo extends AbstractMojo {
      */
     public void setSchemaDirectory(File schemaDirectory) {
         this.schemaDirectory = schemaDirectory;
+    }
+
+    /**
+     * Returns if BigDecimal has been enabled.
+     *
+     * @return true if BigDecimal has been enabled; otherwise will use double.
+     */
+    public boolean isDecimal() {
+        return decimal;
+    }
+
+    /**
+     * Enables BigDecimal usage during code generation.
+     *
+     * @param decimal if true, then enables BigDecimal generation; otherwise uses double
+     */
+    public void setDecimal(boolean decimal) {
+        this.decimal = decimal;
+    }
+
+    /**
+     * Returns if ordered fields have been enabled.
+     *
+     * @return true if ordered fields have been enabled; false otherwise.
+     */
+    public boolean isOrderedFields() {
+        return orderedFields;
+    }
+
+    /**
+     * Sets the ordered fields flag.
+     *
+     * @param orderedFields if true, then ordered fields is enabled.
+     */
+    public void setOrderedFields(boolean orderedFields) {
+        this.orderedFields = orderedFields;
+    }
+
+    /**
+     * Returns the default package to be used during field code generation.
+     *
+     * @return the default package to be used during field code generation.
+     */
+    public String getFieldPackage() {
+        return fieldPackage;
+    }
+
+    /**
+     * Sets the default package to be used during field code generation.
+     *
+     * @param fieldPackage the default package to be used during field code generation.
+     */
+    public void setFieldPackage(String fieldPackage) {
+        this.fieldPackage = fieldPackage;
     }
 }

@@ -19,18 +19,10 @@
 
 package quickfix.mina.ssl;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-
-import java.util.HashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import quickfix.ApplicationAdapter;
 import quickfix.ConfigError;
 import quickfix.DefaultMessageFactory;
@@ -38,7 +30,7 @@ import quickfix.FixVersions;
 import quickfix.Initiator;
 import quickfix.MemoryStoreFactory;
 import quickfix.MessageStoreFactory;
-import quickfix.ScreenLogFactory;
+import quickfix.SLF4JLogFactory;
 import quickfix.Session;
 import quickfix.SessionID;
 import quickfix.SessionSettings;
@@ -48,6 +40,13 @@ import quickfix.ThreadedSocketInitiator;
 import quickfix.mina.ProtocolFactory;
 import quickfix.mina.acceptor.AbstractSocketAcceptor;
 import quickfix.test.acceptance.ATApplication;
+
+import java.util.HashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 public class SSLAndNonSSLTest {
     private final Logger log = LoggerFactory.getLogger(getClass());
@@ -98,7 +97,7 @@ public class SSLAndNonSSLTest {
 
     private SessionSettings getClientSessionSettings(SessionID clientSessionID, String socketConnectPort, String socketUseSSL) {
         SessionSettings settings = new SessionSettings();
-        HashMap<Object, Object> defaults = new HashMap<Object, Object>();
+        HashMap<Object, Object> defaults = new HashMap<>();
         defaults.put("ConnectionType", "initiator");
         defaults.put("SocketConnectProtocol", ProtocolFactory.getTypeString(ProtocolFactory.SOCKET));
         defaults.put("SocketUseSSL", socketUseSSL);
@@ -174,7 +173,7 @@ public class SSLAndNonSSLTest {
 
         public void run() {
             try {
-                HashMap<Object, Object> defaults = new HashMap<Object, Object>();
+                HashMap<Object, Object> defaults = new HashMap<>();
                 defaults.put("ConnectionType", "acceptor");
                 defaults.put("SocketAcceptProtocol", ProtocolFactory.getTypeString(ProtocolFactory.SOCKET));
                 defaults.put("SocketTcpNoDelay", "Y");
@@ -203,7 +202,7 @@ public class SSLAndNonSSLTest {
 
                 ATApplication application = new ATApplication();
                 MessageStoreFactory factory = new MemoryStoreFactory();
-                quickfix.LogFactory logFactory = new ScreenLogFactory(true, true, true);
+                quickfix.LogFactory logFactory = new SLF4JLogFactory(new SessionSettings());
                 acceptor = new SocketAcceptor(application, factory, settings, logFactory,
                         new DefaultMessageFactory());
 

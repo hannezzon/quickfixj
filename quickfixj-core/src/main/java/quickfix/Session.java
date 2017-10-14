@@ -19,23 +19,8 @@
 
 package quickfix;
 
-import static quickfix.LogUtil.logThrowable;
-
-import java.io.Closeable;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import quickfix.Message.Header;
 import quickfix.SessionState.ResendRange;
 import quickfix.field.ApplVerID;
@@ -71,13 +56,36 @@ import quickfix.field.TestReqID;
 import quickfix.field.Text;
 import quickfix.mina.EventHandlingStrategy;
 
+import java.io.Closeable;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static quickfix.LogUtil.logThrowable;
+
 /**
- * The Session is the primary FIX abstraction for message communication. It
- * performs sequencing and error recovery and represents a communication channel
- * to a counterparty. Sessions are independent of specific communication layer
- * connections. A Session is defined as starting with message sequence number of 1
- * and ending when the session is reset. The Session could span many sequential
- * connections (it cannot operate on multiple connection simultaneously).
+ * The Session is the primary FIX abstraction for message communication.
+ * <p>
+ * It performs sequencing and error recovery and represents a communication
+ * channel to a counter-party. Sessions are independent of specific
+ * communication layer connections. The Session could span many sequential
+ * connections (but cannot operate on multiple connection simultaneously).
+ * <p>
+ * A logical session is defined as starting with message sequence number 1
+ * and ending when the session is reset. However, the Session object
+ * instance is registered when first created (per SessionID), and remains
+ * registered for the lifetime of the application (until the Connector is
+ * stopped), even across resets (which reset its internal state, such as
+ * the sequence number).
  */
 public class Session implements Closeable {
 
@@ -140,8 +148,13 @@ public class Session implements Closeable {
     public static final String SETTING_END_TIME = "EndTime";
 
     /**
+     * Session scheduling setting to specify active days of the week.
+     */
+    public static final String SETTING_WEEKDAYS = "Weekdays";
+
+    /**
      * Session setting to indicate whether a data dictionary should be used. If
-     * a data dictionary is not used then message validation is not possble.
+     * a data dictionary is not used then message validation is not possible.
      */
     public static final String SETTING_USE_DATA_DICTIONARY = "UseDataDictionary";
 
@@ -246,10 +259,11 @@ public class Session implements Closeable {
     public static final String SETTING_DISCONNECT_ON_ERROR = "DisconnectOnError";
 
     /**
-     * Session setting to enable milliseconds in message timestamps. Valid
-     * values are "Y" or "N". Default is "Y". Only valid for FIX version >= 4.2.
+     * Session setting to control precision in message timestamps. 
+     * Valid values are "SECONDS", "MILLIS", "MICROS", "NANOS". Default is "MILLIS".
+     * Only valid for FIX version >= 4.2.
      */
-    public static final String SETTING_MILLISECONDS_IN_TIMESTAMP = "MillisecondsInTimeStamp";
+    public static final String SETTING_TIMESTAMP_PRECISION = "TimeStampPrecision";
 
     /**
      * Controls validation of user-defined fields.
@@ -337,7 +351,7 @@ public class Session implements Closeable {
 
     public static final String SETTING_MAX_SCHEDULED_WRITE_REQUESTS = "MaxScheduledWriteRequests";
 
-    private static final ConcurrentMap<SessionID, Session> sessions = new ConcurrentHashMap<SessionID, Session>();
+    private static final ConcurrentMap<SessionID, Session> sessions = new ConcurrentHashMap<>();
 
     private final Application application;
     private final SessionID sessionID;
@@ -368,7 +382,7 @@ public class Session implements Closeable {
     private final boolean resetOnDisconnect;
     private final boolean resetOnError;
     private final boolean disconnectOnError;
-    private final boolean millisecondsInTimeStamp;
+    private final UtcTimestampPrecision timestampPrecision;
     private final boolean refreshMessageStoreAtLogon;
     private final boolean redundantResentRequestsAllowed;
     private final boolean persistMessages;
@@ -381,16 +395,17 @@ public class Session implements Closeable {
     private boolean forceResendWhenCorruptedStore = false;
     private boolean enableNextExpectedMsgSeqNum = false;
     private boolean enableLastMsgSeqNumProcessed = false;
-    
+
     private int maxScheduledWriteRequests = 0;
 
     private final AtomicBoolean isResetting = new AtomicBoolean();
+    private final AtomicBoolean isResettingState = new AtomicBoolean();
 
     private final ListenerSupport stateListeners = new ListenerSupport(SessionStateListener.class);
     private final SessionStateListener stateListener = (SessionStateListener) stateListeners
             .getMulticaster();
 
-    private final AtomicReference<ApplVerID> targetDefaultApplVerID = new AtomicReference<ApplVerID>();
+    private final AtomicReference<ApplVerID> targetDefaultApplVerID = new AtomicReference<>();
     private final DefaultApplVerID senderDefaultApplVerID;
     private boolean validateSequenceNumbers = true;
     private boolean validateIncomingMessage = true;
@@ -408,7 +423,7 @@ public class Session implements Closeable {
             DataDictionaryProvider dataDictionaryProvider, SessionSchedule sessionSchedule,
             LogFactory logFactory, MessageFactory messageFactory, int heartbeatInterval) {
         this(application, messageStoreFactory, sessionID, dataDictionaryProvider, sessionSchedule,
-                logFactory, messageFactory, heartbeatInterval, true, DEFAULT_MAX_LATENCY, true,
+                logFactory, messageFactory, heartbeatInterval, true, DEFAULT_MAX_LATENCY, UtcTimestampPrecision.MILLIS,
                 false, false, false, false, true, false, true, false,
                 DEFAULT_TEST_REQUEST_DELAY_MULTIPLIER, null, true, new int[] { 5 }, false, false,
                 false, true, false, true, false, null, true, DEFAULT_RESEND_RANGE_CHUNK_SIZE, false, false);
@@ -417,7 +432,7 @@ public class Session implements Closeable {
     Session(Application application, MessageStoreFactory messageStoreFactory, SessionID sessionID,
             DataDictionaryProvider dataDictionaryProvider, SessionSchedule sessionSchedule,
             LogFactory logFactory, MessageFactory messageFactory, int heartbeatInterval,
-            boolean checkLatency, int maxLatency, boolean millisecondsInTimeStamp,
+            boolean checkLatency, int maxLatency, UtcTimestampPrecision timestampPrecision,
             boolean resetOnLogon, boolean resetOnLogout, boolean resetOnDisconnect,
             boolean refreshMessageStoreAtLogon, boolean checkCompID,
             boolean redundantResentRequestsAllowed, boolean persistMessages,
@@ -437,7 +452,7 @@ public class Session implements Closeable {
         this.resetOnLogon = resetOnLogon;
         this.resetOnLogout = resetOnLogout;
         this.resetOnDisconnect = resetOnDisconnect;
-        this.millisecondsInTimeStamp = millisecondsInTimeStamp;
+        this.timestampPrecision = timestampPrecision;
         this.refreshMessageStoreAtLogon = refreshMessageStoreAtLogon;
         this.dataDictionaryProvider = dataDictionaryProvider;
         this.messageFactory = messageFactory;
@@ -698,12 +713,15 @@ public class Session implements Closeable {
     }
 
     private void insertSendingTime(Message.Header header) {
-        header.setUtcTimeStamp(SendingTime.FIELD, SystemTime.getDate(), includeMillis());
+        header.setUtcTimeStamp(SendingTime.FIELD, SystemTime.getLocalDateTime(), getTimestampPrecision());
     }
 
-    private boolean includeMillis() {
-        return millisecondsInTimeStamp
-                && sessionID.getBeginString().compareTo(FixVersions.BEGINSTRING_FIX42) >= 0;
+    private UtcTimestampPrecision getTimestampPrecision() {
+        if (sessionID.getBeginString().compareTo(FixVersions.BEGINSTRING_FIX42) >= 0) {
+            return timestampPrecision;
+        } else {
+            return UtcTimestampPrecision.SECONDS;
+        }
     }
 
     /**
@@ -968,35 +986,50 @@ public class Session implements Closeable {
                 }
             }
 
-            if (msgType.equals(MsgType.LOGON)) {
-                nextLogon(message);
-            } else if (msgType.equals(MsgType.HEARTBEAT)) {
-                nextHeartBeat(message);
-            } else if (msgType.equals(MsgType.TEST_REQUEST)) {
-                nextTestRequest(message);
-            } else if (msgType.equals(MsgType.SEQUENCE_RESET)) {
-                nextSequenceReset(message);
-            } else if (msgType.equals(MsgType.LOGOUT)) {
-                nextLogout(message);
-            } else if (msgType.equals(MsgType.RESEND_REQUEST)) {
-                nextResendRequest(message);
-            } else if (msgType.equals(MsgType.REJECT)) {
-                nextReject(message);
-            } else {
-                if (!verify(message)) {
-                    return;
-                }
-                state.incrNextTargetMsgSeqNum();
+            switch (msgType) {
+                case MsgType.LOGON:
+                    nextLogon(message);
+                    break;
+                case MsgType.HEARTBEAT:
+                    nextHeartBeat(message);
+                    break;
+                case MsgType.TEST_REQUEST:
+                    nextTestRequest(message);
+                    break;
+                case MsgType.SEQUENCE_RESET:
+                    nextSequenceReset(message);
+                    break;
+                case MsgType.LOGOUT:
+                    nextLogout(message);
+                    break;
+                case MsgType.RESEND_REQUEST:
+                    nextResendRequest(message);
+                    break;
+                case MsgType.REJECT:
+                    nextReject(message);
+                    break;
+                default:
+                    if (!verify(message)) {
+                        return;
+                    }
+                    state.incrNextTargetMsgSeqNum();
+                    break;
             }
         } catch (final FieldException e) {
-            getLog().onErrorEvent("Rejecting invalid message: " + e + ": " + message);
-            if (resetOrDisconnectIfRequired(message)) {
+            if (logErrorAndDisconnectIfRequired(e, message)) {
                 return;
             }
-            generateReject(message, e.getSessionRejectReason(), e.getField());
+            if (msgType.equals(MsgType.LOGON)) {
+                final String reason = SessionRejectReasonText.getMessage(e.getSessionRejectReason());
+                final String errorMessage = "Invalid Logon message: " + reason + " (field " + e.getField() + ")";
+                generateLogout(errorMessage);
+                state.incrNextTargetMsgSeqNum();
+                disconnect(errorMessage, true);
+            } else {
+                generateReject(message, e.getSessionRejectReason(), e.getField());
+            }
         } catch (final FieldNotFound e) {
-            getLog().onErrorEvent("Rejecting invalid message: " + e + ": " + message);
-            if (resetOrDisconnectIfRequired(message)) {
+            if (logErrorAndDisconnectIfRequired(e, message)) {
                 return;
             }
             if (sessionBeginString.compareTo(FixVersions.BEGINSTRING_FIX42) >= 0
@@ -1012,8 +1045,7 @@ public class Session implements Closeable {
                 }
             }
         } catch (final IncorrectDataFormat e) {
-            getLog().onErrorEvent("Rejecting invalid message: " + e + ": " + message);
-            if (resetOrDisconnectIfRequired(message)) {
+            if (logErrorAndDisconnectIfRequired(e, message)) {
                 return;
             }
             generateReject(message, SessionRejectReason.INCORRECT_DATA_FORMAT_FOR_VALUE, e.field);
@@ -1038,8 +1070,7 @@ public class Session implements Closeable {
             state.incrNextTargetMsgSeqNum();
             disconnect("Logon rejected: " + e, true);
         } catch (final UnsupportedMessageType e) {
-            getLog().onErrorEvent("Rejecting invalid message: " + e + ": " + message);
-            if (resetOrDisconnectIfRequired(message)) {
+            if (logErrorAndDisconnectIfRequired(e, message)) {
                 return;
             }
             if (sessionBeginString.compareTo(FixVersions.BEGINSTRING_FIX42) >= 0) {
@@ -1048,8 +1079,7 @@ public class Session implements Closeable {
                 generateReject(message, "Unsupported message type");
             }
         } catch (final UnsupportedVersion e) {
-            getLog().onErrorEvent("Rejecting invalid message: " + e + ": " + message);
-            if (resetOrDisconnectIfRequired(message)) {
+            if (logErrorAndDisconnectIfRequired(e, message)) {
                 return;
             }
             if (msgType.equals(MsgType.LOGOUT)) {
@@ -1102,6 +1132,11 @@ public class Session implements Closeable {
                 next();
             }
         }
+    }
+
+    private boolean logErrorAndDisconnectIfRequired(final Exception e, Message message) {
+        getLog().onErrorEvent("Rejecting invalid message: " + e + ": " + message);
+        return resetOrDisconnectIfRequired(message);
     }
 
     /**
@@ -1250,7 +1285,7 @@ public class Session implements Closeable {
         header.setBoolean(PossDupFlag.FIELD, true);
         initializeHeader(header);
         header.setUtcTimeStamp(OrigSendingTime.FIELD, header.getUtcTimeStamp(SendingTime.FIELD),
-                includeMillis());
+                getTimestampPrecision());
         header.setInt(MsgSeqNum.FIELD, beginSeqNo);
         sequenceReset.setInt(NewSeqNo.FIELD, newSeqNo);
         sequenceReset.setBoolean(GapFillFlag.FIELD, true);
@@ -1282,8 +1317,8 @@ public class Session implements Closeable {
 
     private void initializeResendFields(Message message) throws FieldNotFound {
         final Message.Header header = message.getHeader();
-        final Date sendingTime = header.getUtcTimeStamp(SendingTime.FIELD);
-        header.setUtcTimeStamp(OrigSendingTime.FIELD, sendingTime, includeMillis());
+        final LocalDateTime sendingTime = header.getUtcTimeStamp(SendingTime.FIELD);
+        header.setUtcTimeStamp(OrigSendingTime.FIELD, sendingTime, getTimestampPrecision());
         header.setBoolean(PossDupFlag.FIELD, true);
         insertSendingTime(header);
     }
@@ -1720,8 +1755,8 @@ public class Session implements Closeable {
         if (!checkLatency) {
             return true;
         }
-        final Date sendingTime = message.getHeader().getUtcTimeStamp(SendingTime.FIELD);
-        return Math.abs(SystemTime.currentTimeMillis() - sendingTime.getTime()) / 1000 <= maxLatency;
+        final LocalDateTime sendingTime = message.getHeader().getUtcTimeStamp(SendingTime.FIELD);
+        return Math.abs(SystemTime.currentTimeMillis() - sendingTime.toInstant(ZoneOffset.UTC).toEpochMilli()) / 1000 <= maxLatency;
     }
 
     private void fromCallback(String msgType, Message msg, SessionID sessionID2)
@@ -1783,6 +1818,7 @@ public class Session implements Closeable {
                     }
                     return; // since we are outside of session time window
                 } else {
+                    // reset when session becomes active
                     resetIfSessionNotCurrent(sessionID, now);
                 }
             }
@@ -1802,6 +1838,8 @@ public class Session implements Closeable {
                             return;
                         }
                     }
+                    // QFJ-926 - reset session before initiating Logon
+                    resetIfSessionNotCurrent(sessionID, SystemTime.currentTimeMillis());
                     if (generateLogon()) {
                         getLog().onEvent("Initiated logon request");
                     } else {
@@ -1924,6 +1962,9 @@ public class Session implements Closeable {
      */
     public void disconnect(String reason, boolean logError) throws IOException {
         try {
+            final boolean logonReceived = state.isLogonReceived();
+            final boolean logonSent = state.isLogonSent();
+
             synchronized (responderLock) {
                 if (!hasResponder()) {
                     if (!ENCOUNTERED_END_OF_STREAM.equals(reason)) {
@@ -1941,8 +1982,6 @@ public class Session implements Closeable {
                 setResponder(null);
             }
 
-            final boolean logonReceived = state.isLogonReceived();
-            final boolean logonSent = state.isLogonSent();
             if (logonReceived || logonSent) {
                 try {
                     application.onLogout(sessionID);
@@ -1982,6 +2021,9 @@ public class Session implements Closeable {
         if (!isSessionTime()) {
             throw new RejectLogon("Logon attempt not within session time");
         }
+
+        // QFJ-926 - reset session before accepting Logon
+        resetIfSessionNotCurrent(sessionID, SystemTime.currentTimeMillis());
 
         if (isStateRefreshNeeded(MsgType.LOGON)) {
             getLog().onEvent("Refreshing message/state store at logon");
@@ -2035,7 +2077,13 @@ public class Session implements Closeable {
         if (logon.isSetField(NextExpectedMsgSeqNum.FIELD) && enableNextExpectedMsgSeqNum) {
 
             final int targetWantsNextSeqNumToBe = logon.getInt(NextExpectedMsgSeqNum.FIELD);
-            final int actualNextNum = state.getMessageStore().getNextSenderMsgSeqNum();
+            state.lockSenderMsgSeqNum();
+            final int actualNextNum;
+            try {
+                actualNextNum = state.getNextSenderMsgSeqNum();
+            } finally {
+                state.unlockSenderMsgSeqNum();
+            }
             // Is the 789 we received too high ??
             if (targetWantsNextSeqNumToBe > actualNextNum) {
                 // barf! we can't resend what we never sent! something unrecoverable has happened.
@@ -2136,7 +2184,7 @@ public class Session implements Closeable {
     private void resendMessages(Message receivedMessage, int beginSeqNo, int endSeqNo)
             throws IOException, InvalidMessage, FieldNotFound {
 
-        final ArrayList<String> messages = new ArrayList<String>();
+        final ArrayList<String> messages = new ArrayList<>();
         try {
             state.get(beginSeqNo, endSeqNo, messages);
         } catch (final IOException e) {
@@ -2216,7 +2264,7 @@ public class Session implements Closeable {
                  * may not have been realistic to production on the other hand.
                  * Apart from the else
                  */
-	        generateSequenceResetIfNeeded(receivedMessage, newBegin, endSeqNo, msgSeqNum);
+            generateSequenceResetIfNeeded(receivedMessage, newBegin, endSeqNo, msgSeqNum);
             }
         } else {
             if (begin != 0) {
@@ -2344,8 +2392,8 @@ public class Session implements Closeable {
 
         if (!msgType.equals(MsgType.SEQUENCE_RESET)) {
             if (header.isSetField(OrigSendingTime.FIELD)) {
-                final Date origSendingTime = header.getUtcTimeStamp(OrigSendingTime.FIELD);
-                final Date sendingTime = header.getUtcTimeStamp(SendingTime.FIELD);
+                final LocalDateTime origSendingTime = header.getUtcTimeStamp(OrigSendingTime.FIELD);
+                final LocalDateTime sendingTime = header.getUtcTimeStamp(SendingTime.FIELD);
                 if (origSendingTime.compareTo(sendingTime) > 0) {
                     generateReject(msg, SessionRejectReason.SENDINGTIME_ACCURACY_PROBLEM, 0);
                     generateLogout();
@@ -2500,8 +2548,15 @@ public class Session implements Closeable {
     }
 
     private void resetState() {
-        state.reset();
-        stateListener.onReset();
+        if (!isResettingState.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            state.reset();
+            stateListener.onReset();
+        } finally {
+            isResettingState.set(false);
+        }
     }
 
     /**
@@ -2751,18 +2806,18 @@ public class Session implements Closeable {
     }
 
     private static String extractNumber(String txt, int from) {
-        String ret = "";
+        final StringBuilder ret = new StringBuilder();
         for (int i = from; i != txt.length(); ++i) {
             final char c = txt.charAt(i);
             if (c >= '0' && c <= '9') {
-                ret += c;
+                ret.append(c);
             } else {
                 if (ret.length() != 0) {
                     break;
                 }
             }
         }
-        return ret.trim();
+        return ret.toString();
     }
 
     protected static Integer extractExpectedSequenceNumber(String txt) {
@@ -2797,7 +2852,6 @@ public class Session implements Closeable {
     public void setMaxScheduledWriteRequests(int maxScheduledWriteRequests) {
         this.maxScheduledWriteRequests = maxScheduledWriteRequests;
     }
-    
 
     public void setIgnoreHeartBeatFailure(boolean ignoreHeartBeatFailure) {
         disableHeartBeatCheck = ignoreHeartBeatFailure;
